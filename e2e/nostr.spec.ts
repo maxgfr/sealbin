@@ -70,6 +70,7 @@ test("short link: a long incompressible paste is split across relay events, open
     content,
     title: "Long note",
     nostr: true,
+    paste: true,
   });
   expect(deleteUrl).not.toBeNull();
 
