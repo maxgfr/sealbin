@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LineRange } from "../../core/link";
 import {
+  codeThemeDefinition,
   HIGHLIGHT_MAX_BYTES,
   HIGHLIGHT_MAX_LINES,
   type HighlightResult,
@@ -65,6 +66,9 @@ export function CodeView({ content, lang, wrap, lines, lineHref, onSelectLines }
     highlighted && highlighted.content === content && highlighted.lang === lang && !limit
       ? highlighted.result
       : null;
+  // A chosen theme's background and foreground, for text shown plain (no language, over the
+  // limits): the highlighted result carries its own.
+  const [surface, setSurface] = useState<{ fg: string; bg: string } | null>(null);
   const [failed, setFailed] = useState(false);
   const root = useRef<HTMLElement>(null);
   const scrolled = useRef(false);
@@ -87,6 +91,22 @@ export function CodeView({ content, lang, wrap, lines, lineHref, onSelectLines }
     };
   }, [content, lang, theme, limit]);
 
+  useEffect(() => {
+    if (!themed) return;
+    let live = true;
+    codeThemeDefinition(theme).then(
+      ({ fg, bg }) => {
+        if (live) setSurface({ fg, bg });
+      },
+      (err: unknown) => {
+        console.warn("sealbin: code theme unavailable, keeping the page colours", err);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [theme, themed]);
+
   const plain = splitLines(content);
   let rows: Token[][] = plain.map((text) => (text ? [{ content: text, offset: 0 }] : []));
   if (result) {
@@ -104,7 +124,8 @@ export function CodeView({ content, lang, wrap, lines, lineHref, onSelectLines }
     }
   }, [lines, rows.length]);
 
-  const style = themed && result ? { background: result.bg, color: result.fg } : undefined;
+  const colors = result ?? surface;
+  const style = themed && colors ? { background: colors.bg, color: colors.fg } : undefined;
   return (
     <>
       {limit && (

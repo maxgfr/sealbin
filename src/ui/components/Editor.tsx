@@ -7,12 +7,16 @@
  * so an opened Windows file round-trips byte for byte.
  * `lang` is a Shiki id; the matching CodeMirror mode is looked up lazily in
  * `@codemirror/language-data` (each mode is its own chunk).
+ * Syntax colours follow the code theme picked in the header; a chosen theme (not "Match page")
+ * also brings its background and foreground, as in the viewer.
  */
 import { LanguageDescription } from "@codemirror/language";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { editorLook } from "../lib/editorTheme";
+import { codeTheme, themePref } from "../lib/theme";
 import { toast } from "./Toast";
 
 interface EditorProps {
@@ -39,6 +43,10 @@ export function Editor({ value, revision, onChange, lang, label, onFile }: Edito
   const view = useRef<EditorView | null>(null);
   const language = useRef(new Compartment());
   const separator = useRef(new Compartment());
+  const look = useRef(new Compartment());
+  const theme = codeTheme.value;
+  const themed = themePref.value.code !== "auto";
+  const [colors, setColors] = useState<{ fg: string; bg: string } | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onFileRef = useRef(onFile);
@@ -55,6 +63,7 @@ export function Editor({ value, revision, onChange, lang, label, onFile }: Edito
           EditorView.lineWrapping,
           language.current.of([]),
           separator.current.of(lineSeparatorFor(value)),
+          look.current.of([]),
           EditorView.contentAttributes.of({ "aria-label": label }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current(u.state.sliceDoc());
@@ -127,5 +136,30 @@ export function Editor({ value, revision, onChange, lang, label, onFile }: Edito
     };
   }, [lang]);
 
-  return <div ref={host} class="sb-editor" />;
+  useEffect(() => {
+    let live = true;
+    editorLook(theme).then(
+      ({ highlight, fg, bg }) => {
+        if (!live) return;
+        view.current?.dispatch({ effects: look.current.reconfigure(highlight) });
+        // Surface and syntax colours switch together, once the new theme is loaded.
+        setColors(themed ? { fg, bg } : null);
+      },
+      (err: unknown) => {
+        // Cosmetic, like the viewer's highlighting: keep the default colours.
+        console.warn("sealbin: editor theme unavailable, keeping the default colours", err);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [theme, themed]);
+
+  return (
+    <div
+      ref={host}
+      class={colors ? "sb-editor sb-editor--themed" : "sb-editor"}
+      style={colors ? { "--sb-code-bg": colors.bg, "--sb-code-fg": colors.fg } : undefined}
+    />
+  );
 }

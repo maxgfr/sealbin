@@ -1,9 +1,9 @@
 /**
- * Syntax highlighting for the viewer, with Shiki's core build and its JavaScript regex engine
+ * Syntax highlighting for the viewer (and the code theme's colours for the editor), with Shiki's core build and its JavaScript regex engine
  * (no Oniguruma Wasm). Shiki, each grammar and each theme are imported on demand, so none of them
  * reach the entry chunk. Above the size limits the viewer shows plain text instead.
  */
-import type { HighlighterCore, ThemedToken } from "shiki/core";
+import type { HighlighterCore, ThemedToken, ThemeRegistrationResolved } from "shiki/core";
 
 export const HIGHLIGHT_MAX_BYTES = 500 * 1024;
 export const HIGHLIGHT_MAX_LINES = 20_000;
@@ -40,25 +40,34 @@ function getHighlighter(): Promise<HighlighterCore> {
   return highlighter;
 }
 
+/** Loads code theme `theme` (github-light for an unknown id); returns the id it loaded. */
+async function loadThemeInto(hl: HighlighterCore, theme: string): Promise<string> {
+  const { bundledThemes } = await import("shiki/themes");
+  const themeName = Object.hasOwn(bundledThemes, theme) ? theme : "github-light";
+  const loadTheme = bundledThemes[themeName as keyof typeof bundledThemes];
+  if (!hl.getLoadedThemes().includes(themeName)) await hl.loadTheme(loadTheme);
+  return themeName;
+}
+
+/** Code theme `theme`, resolved: its background, foreground and TextMate token rules. */
+export async function codeThemeDefinition(theme: string): Promise<ThemeRegistrationResolved> {
+  const hl = await getHighlighter();
+  return hl.getTheme(await loadThemeInto(hl, theme));
+}
+
 /** Tokens for `content` in Shiki language `lang` and theme `theme`; null for an unknown language. */
 export async function highlight(
   content: string,
   lang: string,
   theme: string,
 ): Promise<HighlightResult | null> {
-  const [hl, { bundledLanguages }, { bundledThemes }] = await Promise.all([
-    getHighlighter(),
-    import("shiki/langs"),
-    import("shiki/themes"),
-  ]);
+  const [hl, { bundledLanguages }] = await Promise.all([getHighlighter(), import("shiki/langs")]);
   const loadLang = Object.hasOwn(bundledLanguages, lang)
     ? bundledLanguages[lang as keyof typeof bundledLanguages]
     : undefined;
   if (!loadLang) return null;
-  const themeName = Object.hasOwn(bundledThemes, theme) ? theme : "github-light";
-  const loadTheme = bundledThemes[themeName as keyof typeof bundledThemes];
+  const themeName = await loadThemeInto(hl, theme);
   if (!hl.getLoadedLanguages().includes(lang)) await hl.loadLanguage(loadLang);
-  if (!hl.getLoadedThemes().includes(themeName)) await hl.loadTheme(loadTheme);
   const { tokens, fg, bg } = hl.codeToTokens(content, { lang, theme: themeName });
   return { lines: tokens, fg, bg };
 }
