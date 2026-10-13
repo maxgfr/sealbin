@@ -50,8 +50,11 @@ test("f forks right after the code view appears", async ({ page }) => {
   await expect(page.getByRole("textbox", { name: "Paste content" })).toHaveText("fork me");
 });
 
-test("y, c and w act right after the code view appears", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+test("y, c and w act right after the code view appears", async ({ page, context, browserName }) => {
+  // Only Chromium knows these permissions; Firefox and WebKit allow writes from a key press.
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
   const { shareUrl } = await createPaste(page, { content: "copy me" });
   await page.goto(shareUrl);
   await expect(page.locator("section.sb-code")).toBeVisible();
@@ -65,4 +68,24 @@ test("y, c and w act right after the code view appears", async ({ page, context 
   const before = await wrap.getAttribute("aria-pressed");
   await page.keyboard.press("w");
   await expect(wrap).not.toHaveAttribute("aria-pressed", before ?? "");
+});
+
+test("shortcuts work as soon as a link paste shows after a cold load", async ({ page }) => {
+  const { shareUrl } = await createPaste(page, { content: "cold start" });
+  await page.goto(shareUrl);
+  const wrap = page.getByRole("toolbar", { name: "Paste actions" }).getByRole("button", {
+    name: "Wrap",
+  });
+  for (let i = 0; i < 10; i++) {
+    await page.reload();
+    await expect(page.locator("section.sb-code")).toBeVisible();
+    const before = (await wrap.getAttribute("aria-pressed")) ?? "";
+    const download = page.waitForEvent("download", { timeout: 2_000 });
+    await page.keyboard.press("d");
+    await download;
+    await page.keyboard.press("w");
+    await expect(wrap, `try ${i + 1}`).not.toHaveAttribute("aria-pressed", before, {
+      timeout: 1_000,
+    });
+  }
 });

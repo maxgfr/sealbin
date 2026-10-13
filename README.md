@@ -84,6 +84,11 @@ Lint and types: `bun run lint`, `bun run typecheck`.
 
 Relays default to a set of public Nostr relays. Set `SEALBIN_RELAYS` at build time (comma-separated `wss://` URLs) to use others.
 
+Known limits:
+
+- Text pasted into an empty editor gets LF line endings: CodeMirror turns CRLF into LF on input. Opening a CRLF paste (to fork it) keeps CRLF.
+- Some public relays refuse the WebSocket handshake (HTTP 429 or 503). The browser logs each refusal as a console error even though the app goes on with the other relays.
+
 ## License
 
 MIT
