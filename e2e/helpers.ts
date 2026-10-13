@@ -36,9 +36,10 @@ export async function pasteInEditor(page: Page, text: string): Promise<void> {
   await page.locator(".cm-content").evaluate((el, t) => {
     const data = new DataTransfer();
     data.setData("text/plain", t);
-    el.dispatchEvent(
-      new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
-    );
+    // Firefox gives a constructed ClipboardEvent an empty clipboardData, whatever the init says.
+    const paste = new ClipboardEvent("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: data });
+    el.dispatchEvent(paste);
   }, text);
 }
 

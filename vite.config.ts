@@ -72,7 +72,8 @@ export default defineConfig({
     securityHeaders(),
     VitePWA({
       registerType: "autoUpdate",
-      injectRegister: "script",
+      // Registered by src/ui/lib/sw.ts, which handles Firefox aborting it on reload.
+      injectRegister: false,
       manifest: {
         name: "sealbin",
         short_name: "sealbin",
@@ -102,9 +103,7 @@ export default defineConfig({
               ...initialFiles("dist"),
               ...chunkClosure("dist", OFFLINE_LINK_MODE),
             ]);
-            const manifest = entries.filter(
-              (e) => !e.url.endsWith(".js") || e.url === "registerSW.js" || shell.has(e.url),
-            );
+            const manifest = entries.filter((e) => !e.url.endsWith(".js") || shell.has(e.url));
             return Promise.resolve({ manifest, warnings: [] });
           },
         ],
