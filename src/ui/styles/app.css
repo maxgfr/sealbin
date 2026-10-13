@@ -805,6 +805,32 @@ legend.sb-field__label {
   background: color-mix(in oklch, var(--sb-color-focus) 30%, transparent);
 }
 
+/* A chosen code theme (Editor sets --sb-code-bg / --sb-code-fg): its surface, chrome derived from it. */
+.sb-editor--themed,
+.sb-editor--themed .cm-editor,
+.sb-editor--themed .cm-gutters {
+  color: var(--sb-code-fg);
+  background: var(--sb-code-bg);
+}
+
+.sb-editor--themed .cm-gutters {
+  color: color-mix(in oklch, var(--sb-code-fg) 55%, transparent);
+  border-right-color: color-mix(in oklch, var(--sb-code-fg) 15%, transparent);
+}
+
+.sb-editor--themed .cm-activeLine {
+  background: color-mix(in oklch, var(--sb-code-fg) 6%, transparent);
+}
+
+.sb-editor--themed .cm-activeLineGutter {
+  color: var(--sb-code-fg);
+  background: color-mix(in oklch, var(--sb-code-fg) 10%, transparent);
+}
+
+.sb-editor--themed .cm-cursor {
+  border-left-color: var(--sb-code-fg);
+}
+
 /* Lazy screen load error: message, then a reload button */
 .sb-notice__body {
   margin: 0 0 var(--sb-space-2);
