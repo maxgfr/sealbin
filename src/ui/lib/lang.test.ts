@@ -1,6 +1,13 @@
 import { bundledLanguagesInfo } from "shiki/langs";
 import { describe, expect, it } from "vitest";
-import { type LangInfo, langFromFilename, langFromHljs, langLabel, resolveLang } from "./lang";
+import {
+  detectLang,
+  type LangInfo,
+  langFromFilename,
+  langFromHljs,
+  langLabel,
+  resolveLang,
+} from "./lang";
 
 const infos: LangInfo[] = bundledLanguagesInfo;
 
@@ -61,5 +68,40 @@ describe("langLabel", () => {
   it("uses Shiki's display name", () => {
     expect(langLabel("", infos)).toBe("Plain text");
     expect(langLabel("python", infos)).toBe("Python");
+  });
+});
+
+describe("detectLang", () => {
+  it.each([
+    ["The quick brown fox jumps over the lazy dog."],
+    ["Meeting notes\nBuy milk and eggs\nCall Bob tomorrow"],
+    ["short one\nline2\nline3"],
+  ])("leaves prose as plain text: %j", async (content) => {
+    expect(await detectLang(content, infos)).toBe("");
+  });
+
+  it.each([
+    [
+      "python",
+      'def greet(name):\n    """Say hello."""\n    if not name:\n        return None\n    for i in range(3):\n        print(f"hello {name} {i}")\n    return True\n\n\nclass Greeter:\n    def __init__(self):\n        self.count = 0\n',
+    ],
+    [
+      "sql",
+      "SELECT u.id, u.name, COUNT(o.id) AS orders\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nWHERE u.created_at > '2024-01-01'\nGROUP BY u.id, u.name\nORDER BY orders DESC;\n",
+    ],
+    [
+      "json",
+      '{\n  "name": "sealbin",\n  "version": "1.0.0",\n  "private": true,\n  "tags": ["a", "b"],\n  "count": 3\n}\n',
+    ],
+    [
+      "javascript",
+      "function sum(values) {\n  let total = 0;\n  for (const v of values) {\n    total += v;\n  }\n  return total;\n}\n\nconsole.log(sum([1, 2, 3]));\n",
+    ],
+    [
+      "shellscript",
+      '#!/usr/bin/env bash\nset -euo pipefail\nfor f in *.txt; do\n  echo "$f"\ndone\n',
+    ],
+  ])("detects %s", async (expected, content) => {
+    expect(await detectLang(content, infos)).toBe(expected);
   });
 });

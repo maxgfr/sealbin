@@ -11,10 +11,11 @@ import type { Paste } from "../../core/codec";
 import type { Route } from "../../core/link";
 import { Editor } from "../components/Editor";
 import { QrDialog } from "../components/QrDialog";
-import { useShortcutActions } from "../components/Shortcuts";
+import { CREATE_ARIA_KEYS, CREATE_KEY, useShortcutActions } from "../components/Shortcuts";
 import { SizeMeter } from "../components/SizeMeter";
 import { toast } from "../components/Toast";
 import { takeDraft } from "../lib/draft";
+import { describeError } from "../lib/errors";
 import {
   DEFAULT_EXPIRY,
   EXPIRY_OPTIONS,
@@ -23,7 +24,7 @@ import {
   isExpiryId,
 } from "../lib/expiry";
 import { detectLang, type LangInfo, langFromFilename, langLabel, loadLanguages } from "../lib/lang";
-import { fitsQr } from "../lib/size";
+import { fitsQr, pasteBytes, tooLargeText } from "../lib/size";
 import { routeUrl } from "../routes";
 
 type Mode = "link" | "nostr";
@@ -32,6 +33,10 @@ interface Result {
   shareUrl: string;
   /** Nostr only. Shown once: it is not recoverable afterwards. */
   deleteUrl: string | null;
+  /** Short links only: what "Delete now" needs. Null once deleted. */
+  owner: { ownerKey: Uint8Array; nostrId: string; eventId: string; createdAt: number } | null;
+  mode: Mode;
+  burn: boolean;
 }
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -53,10 +58,14 @@ async function readTextFile(file: File): Promise<string> {
 
 export function Compose() {
   const content = useSignal("");
+  /** Bumped whenever the text is replaced from outside the editor (see Editor's `revision`). */
+  const revision = useSignal(0);
   const title = useSignal("");
   const filename = useSignal("");
   /** Explicit choice from the select; "" = automatic (filename, then detection). */
   const chosenLang = useSignal("");
+  /** Language a fork brings from the original paste: a starting value, not a hand choice. */
+  const draftLang = useSignal("");
   const expiry = useSignal<ExpiryId>(DEFAULT_EXPIRY);
   const burn = useSignal(false);
   const password = useSignal("");
@@ -66,19 +75,24 @@ export function Compose() {
   const result = useSignal<Result | null>(null);
   const languages = useSignal<LangInfo[]>([]);
   const qrOpen = useSignal(false);
+  const deleting = useSignal(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const errorBox = useRef<HTMLParagraphElement>(null);
 
   const mode = useComputed<Mode>(() => (burn.value ? "nostr" : modeChoice.value));
   const filenameLang = useComputed(() => langFromFilename(filename.value, languages.value));
-  const editorLang = useComputed(() => chosenLang.value || filenameLang.value || "");
+  const editorLang = useComputed(
+    () => chosenLang.value || draftLang.value || filenameLang.value || "",
+  );
 
   useEffect(() => {
     const draft = takeDraft();
     if (draft) {
-      if (draft.content !== undefined) content.value = draft.content;
+      if (draft.content !== undefined) setText(draft.content);
       if (draft.title !== undefined) title.value = draft.title;
       if (draft.filename !== undefined) filename.value = draft.filename;
-      if (draft.lang !== undefined) chosenLang.value = draft.lang;
+      if (draft.lang !== undefined) draftLang.value = draft.lang;
     }
     loadLanguages().then(
       (list) => {
@@ -89,15 +103,46 @@ export function Compose() {
   }, []);
 
   useSignalEffect(() => {
-    // Any edit invalidates a stale error message.
+    // Any edit, option or mode change invalidates a stale error message.
     void content.value;
+    void title.value;
+    void filename.value;
+    void chosenLang.value;
+    void draftLang.value;
+    void expiry.value;
+    void burn.value;
+    void password.value;
+    void modeChoice.value;
     error.value = null;
   });
+
+  // The result replaces the form (and its focused Create button): move focus to its heading.
+  const hasResult = result.value !== null;
+  useEffect(() => {
+    if (hasResult) resultHeading.current?.focus();
+  }, [hasResult]);
+
+  // The delete link exists only on this page: warn before leaving while it is still needed.
+  const guardLeave = result.value?.owner != null;
+  useEffect(() => {
+    if (!guardLeave) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [guardLeave]);
+
+  function fail(message: string) {
+    error.value = message;
+    // After the render that shows it.
+    queueMicrotask(() => requestAnimationFrame(() => errorBox.current?.focus()));
+  }
 
   async function create() {
     if (busy.value || result.value) return;
     if (!content.value.trim()) {
-      error.value = "Nothing to seal yet. Write or drop some text first.";
+      fail("Nothing to seal yet. Write or drop some text first.");
       return;
     }
     busy.value = true;
@@ -117,11 +162,22 @@ export function Compose() {
         burn: burn.value,
         content: content.value,
       };
+      const tooLarge = tooLargeText(pasteBytes(JSON.stringify(paste)));
+      if (tooLarge) {
+        fail(tooLarge);
+        return;
+      }
       const pw = password.value ? { password: password.value } : {};
       if (mode.value === "link") {
         const payload = await encodeLinkPayload(paste, pw);
         const share: Route = { kind: "link", payload, password: password.value !== "" };
-        result.value = { shareUrl: routeUrl(share, location), deleteUrl: null };
+        result.value = {
+          shareUrl: routeUrl(share, location),
+          deleteUrl: null,
+          owner: null,
+          mode: "link",
+          burn: paste.burn,
+        };
       } else {
         const { publishPaste } = await import("../../core/nostr");
         const r = await publishPaste(paste, pw);
@@ -131,11 +187,20 @@ export function Compose() {
             { kind: "delete", nostrId: r.nostrId, ownerKey: r.ownerKey },
             location,
           ),
+          owner: {
+            ownerKey: r.ownerKey,
+            nostrId: r.nostrId,
+            eventId: r.eventId,
+            createdAt: r.createdAt,
+          },
+          mode: "nostr",
+          burn: paste.burn,
         };
       }
       password.value = "";
     } catch (err) {
-      error.value = `Could not create the paste. ${errorText(err)}`;
+      const { title: what, body } = describeError(err);
+      fail(`Could not create the paste. ${what}. ${body}`);
     } finally {
       busy.value = false;
     }
@@ -150,30 +215,68 @@ export function Compose() {
 
   async function openFile(file: File) {
     try {
-      content.value = await readTextFile(file);
+      const text = await readTextFile(file);
+      if (
+        content.value.trim() !== "" &&
+        !window.confirm(`Replace the current text with ${file.name}?`)
+      ) {
+        return;
+      }
+      setText(text);
       filename.value = file.name;
     } catch (err) {
       toast(`Could not open the file. ${errorText(err)}`, "error");
     }
   }
 
+  function setText(text: string) {
+    content.value = text;
+    revision.value++;
+  }
+
   function reset() {
-    content.value = "";
+    setText("");
     title.value = "";
     filename.value = "";
     chosenLang.value = "";
+    draftLang.value = "";
     burn.value = false;
     result.value = null;
   }
 
+  async function deleteNow() {
+    const owner = result.value?.owner;
+    if (!owner || deleting.value) return;
+    deleting.value = true;
+    try {
+      const { deletePaste } = await import("../../core/nostr");
+      await deletePaste(owner.ownerKey, owner.nostrId, {
+        eventId: owner.eventId,
+        createdAt: owner.createdAt,
+      });
+      if (result.value) result.value = { ...result.value, owner: null };
+      toast("Paste deleted");
+    } catch (err) {
+      const { title: what, body } = describeError(err);
+      toast(`Could not delete the paste. ${what}. ${body}`, "error");
+    } finally {
+      deleting.value = false;
+    }
+  }
+
   if (result.value) {
-    const { shareUrl, deleteUrl } = result.value;
+    const { shareUrl, deleteUrl, owner } = result.value;
+    const kind = result.value.mode;
+    const burned = result.value.burn;
     return (
       <section class="sb-compose" aria-labelledby="sb-result-title">
         <div class="sb-result">
-          <h1 id="sb-result-title" class="sb-result__title">
+          <h1 id="sb-result-title" class="sb-result__title" tabIndex={-1} ref={resultHeading}>
             Paste sealed
           </h1>
+          <p class="sb-visually-hidden" role="status">
+            Paste sealed. The share link is ready to copy.
+          </p>
           <div class="sb-field">
             <label class="sb-field__label" for="sb-share-url">
               Share link
@@ -189,12 +292,25 @@ export function Compose() {
               </button>
             </div>
             <span class="sb-field__hint">
-              {mode.value === "link"
+              {kind === "link"
                 ? "The key is in the link. Anyone with it can read the paste."
-                : "The key is in the link. Relays only store ciphertext."}
+                : burned
+                  ? "The key is in the link. Opening it destroys the paste, so don't open it yourself."
+                  : "The key is in the link. Relays only store ciphertext."}
             </span>
           </div>
-          {deleteUrl && (
+          {kind === "link" && (
+            <p class="sb-notice">
+              This paste lives only in its link: nothing is stored, so there is nothing to delete.
+              To delete it later or burn it after reading, use a short link.
+            </p>
+          )}
+          {deleteUrl && !owner && (
+            <p class="sb-notice" role="status">
+              Paste deleted. Its link no longer opens it.
+            </p>
+          )}
+          {deleteUrl && owner && (
             <div class="sb-field">
               <label class="sb-field__label" for="sb-delete-url">
                 Delete link
@@ -212,13 +328,25 @@ export function Compose() {
               <p class="sb-notice sb-notice--warning">
                 Shown once. Keep it to delete the paste before it expires.
               </p>
+              <div class="sb-toolbar__group">
+                <button
+                  type="button"
+                  class="sb-button sb-button--danger"
+                  onClick={() => void deleteNow()}
+                  disabled={deleting.value}
+                >
+                  {deleting.value ? "Deleting…" : "Delete now"}
+                </button>
+              </div>
             </div>
           )}
           <div class="sb-compose__actions">
             <div class="sb-toolbar__group">
-              <a class="sb-button" href={shareUrl}>
-                Open paste
-              </a>
+              {!burned && (
+                <a class="sb-button" href={shareUrl} target="_blank" rel="noopener noreferrer">
+                  Open paste
+                </a>
+              )}
               {fitsQr(shareUrl) && (
                 <button
                   type="button"
@@ -277,6 +405,8 @@ export function Compose() {
             value={filename.value}
             onInput={(e) => {
               filename.value = e.currentTarget.value;
+              // A new filename says more than the language carried over from a fork.
+              draftLang.value = "";
             }}
             placeholder="e.g. main.rs"
             autoComplete="off"
@@ -306,15 +436,18 @@ export function Compose() {
           <span id="sb-lang-hint" class="sb-field__hint">
             {chosenLang.value
               ? "Chosen by hand."
-              : filenameLang.value !== null
-                ? `${langLabel(filenameLang.value, langs)}, from the filename.`
-                : "Detected from the content when you create."}
+              : draftLang.value
+                ? `${langLabel(draftLang.value, langs)}, from the original paste.`
+                : filenameLang.value !== null
+                  ? `${langLabel(filenameLang.value, langs)}, from the filename.`
+                  : "Detected from the content when you create."}
           </span>
         </div>
       </div>
 
       <Editor
         value={content.value}
+        revision={revision.value}
         onChange={(v) => {
           content.value = v;
         }}
@@ -419,10 +552,13 @@ export function Compose() {
         }}
         password={password.value !== ""}
         mode={mode.value}
+        onShortLink={() => {
+          modeChoice.value = "nostr";
+        }}
       />
 
       {error.value && (
-        <p class="sb-notice sb-notice--error" role="alert">
+        <p class="sb-notice sb-notice--error" role="alert" tabIndex={-1} ref={errorBox}>
           {error.value}
         </p>
       )}
@@ -454,9 +590,9 @@ export function Compose() {
           class="sb-button sb-button--primary"
           onClick={() => void create()}
           disabled={busy.value}
-          aria-keyshortcuts="Control+S Meta+S"
+          aria-keyshortcuts={CREATE_ARIA_KEYS}
         >
-          {busy.value ? "Sealing…" : "Create"} <kbd class="sb-kbd">Ctrl S</kbd>
+          {busy.value ? "Sealing…" : "Create"} <kbd class="sb-kbd">{CREATE_KEY}</kbd>
         </button>
       </div>
     </section>

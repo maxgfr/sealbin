@@ -1,6 +1,10 @@
 /**
- * CodeMirror 6 host. Controlled loosely: `value` replaces the document only when it differs from
- * what the editor holds (draft prefill, opened file), so typing never round-trips.
+ * CodeMirror 6 host. Controlled loosely: `value` replaces the document only when `revision` changes
+ * (draft prefill, opened file, reset). Typing never round-trips: effects run after paint with the
+ * `value` of their render, which lags behind fast typing, so syncing on `value` itself would write
+ * stale text back and ping-pong forever.
+ * Text that uses CRLF line breaks keeps them: the line separator follows the text set from outside,
+ * so an opened Windows file round-trips byte for byte.
  * `lang` is a Shiki id; the matching CodeMirror mode is looked up lazily in
  * `@codemirror/language-data` (each mode is its own chunk).
  */
@@ -13,6 +17,8 @@ import { toast } from "./Toast";
 
 interface EditorProps {
   value: string;
+  /** Bumped by the parent each time it replaces the text; typing never bumps it. */
+  revision: number;
   onChange: (value: string) => void;
   lang: string;
   label: string;
@@ -21,12 +27,18 @@ interface EditorProps {
 }
 
 /** Shiki ids whose CodeMirror name differs. */
+/** CodeMirror's line separator for `text`: CRLF when the text uses it, else the default (LF). */
+export function lineSeparatorFor(text: string) {
+  return text.includes("\r\n") ? EditorState.lineSeparator.of("\r\n") : [];
+}
+
 const CM_NAMES: Record<string, string> = { shellscript: "shell", docker: "dockerfile" };
 
-export function Editor({ value, onChange, lang, label, onFile }: EditorProps) {
+export function Editor({ value, revision, onChange, lang, label, onFile }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const language = useRef(new Compartment());
+  const separator = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onFileRef = useRef(onFile);
@@ -42,9 +54,10 @@ export function Editor({ value, onChange, lang, label, onFile }: EditorProps) {
           basicSetup,
           EditorView.lineWrapping,
           language.current.of([]),
+          separator.current.of(lineSeparatorFor(value)),
           EditorView.contentAttributes.of({ "aria-label": label }),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+            if (u.docChanged) onChangeRef.current(u.state.sliceDoc());
           }),
           EditorView.domEventHandlers({
             dragover: (e) => {
@@ -79,10 +92,12 @@ export function Editor({ value, onChange, lang, label, onFile }: EditorProps) {
 
   useEffect(() => {
     const v = view.current;
-    if (v && v.state.doc.toString() !== value) {
+    if (v && v.state.sliceDoc() !== value) {
+      // Separator first: the inserted text is split into lines by the new state's separator.
+      v.dispatch({ effects: separator.current.reconfigure(lineSeparatorFor(value)) });
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
     }
-  }, [value]);
+  }, [revision]);
 
   useEffect(() => {
     let live = true;

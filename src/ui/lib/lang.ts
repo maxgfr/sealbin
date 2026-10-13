@@ -104,9 +104,91 @@ export function loadLanguages(): Promise<LangInfo[]> {
   return infosPromise;
 }
 
-/** Guess a Shiki id from content with highlight.js `highlightAuto` (lazy chunk). */
+/**
+ * highlight.js languages auto-detection may pick: common ones only, so prose does not match an
+ * obscure grammar. Bash scores high on almost anything with quotes, so shell is detected from a
+ * shebang instead (`fromShebang`).
+ */
+const DETECTABLE = [
+  "c",
+  "cpp",
+  "csharp",
+  "css",
+  "diff",
+  "go",
+  "java",
+  "javascript",
+  "json",
+  "kotlin",
+  "markdown",
+  "php",
+  "python",
+  "ruby",
+  "rust",
+  "scss",
+  "sql",
+  "swift",
+  "typescript",
+  "xml",
+  "yaml",
+];
+/** Below this highlight.js relevance the guess is noise (prose scores 0–2). */
+export const DETECT_MIN_RELEVANCE = 5;
+/** The winner must beat the runner-up by this factor, unless both are one family. */
+export const DETECT_MARGIN = 1.5;
+/** Languages whose syntax nests (JSON is JavaScript, JavaScript is TypeScript…): a close runner-up there is expected. */
+const FAMILIES = [
+  ["json", "javascript", "typescript"],
+  ["c", "cpp"],
+  ["css", "scss"],
+];
+const sameFamily = (a: string, b: string) => FAMILIES.some((f) => f.includes(a) && f.includes(b));
+
+const SHEBANGS: [RegExp, string][] = [
+  [/\b(?:ba|z|k|da)?sh\b/, "shellscript"],
+  [/\bpython[0-9.]*\b/, "python"],
+  [/\bnode\b|\bdeno\b|\bbun\b/, "javascript"],
+  [/\bruby\b/, "ruby"],
+  [/\bperl\b/, "perl"],
+];
+
+/** Language named by a `#!` first line, or null. */
+function fromShebang(content: string): string | null {
+  if (!content.startsWith("#!")) return null;
+  const line = content.split("\n", 1)[0] ?? "";
+  return SHEBANGS.find(([re]) => re.test(line))?.[1] ?? null;
+}
+
+/** A JSON object or array (highlight.js scores JSON barely above C++). */
+function isJsonDocument(content: string): boolean {
+  const t = content.trim();
+  if (!/^[[{]/.test(t) || t.length > 1_000_000) return false;
+  try {
+    JSON.parse(t);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Guess a Shiki id from content with highlight.js `highlightAuto` (lazy chunk). Returns "" (plain
+ * text) unless the best guess is relevant enough and clearly ahead of the second best.
+ */
 export async function detectLang(content: string, infos: readonly LangInfo[]): Promise<string> {
+  const exact = fromShebang(content) ?? (isJsonDocument(content) ? "json" : null);
+  if (exact) return resolveLang(exact, infos) ?? "";
   const { default: hljs } = await import("highlight.js/lib/common");
   // highlightAuto is linear in input size; a sample is enough to guess.
-  return langFromHljs(hljs.highlightAuto(content.slice(0, 20_000)).language, infos);
+  const best = hljs.highlightAuto(content.slice(0, 20_000), DETECTABLE);
+  if (!best.language || best.relevance < DETECT_MIN_RELEVANCE) return "";
+  const second = best.secondBest;
+  if (
+    second?.language &&
+    !sameFamily(best.language, second.language) &&
+    best.relevance < second.relevance * DETECT_MARGIN
+  ) {
+    return "";
+  }
+  return langFromHljs(best.language, infos);
 }

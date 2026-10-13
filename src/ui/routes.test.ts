@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseRoute, type Route } from "../core/link";
-import { baseUrl, navigate, route, routeKey, routeUrl, startRouter } from "./routes";
+import { parseRoute, type Route, serializeRoute } from "../core/link";
+import { baseUrl, navigate, route, routeKey, routeUrl, startRouter, visit } from "./routes";
 
 const loc = { origin: "https://maxgfr.github.io", pathname: "/sealbin/" };
 
 /** Minimal window stand-in: a hash, a history and hashchange listeners. */
 function fakeWindow(hash = "") {
   const listeners = new Set<() => void>();
+  const clicks = new Set<(e: MouseEvent) => void>();
   const win = {
     location: {
       get hash() {
@@ -23,10 +24,19 @@ function fakeWindow(hash = "") {
         hash = url;
       },
     },
-    addEventListener: (_: string, l: () => void) => listeners.add(l),
-    removeEventListener: (_: string, l: () => void) => listeners.delete(l),
+    addEventListener: (type: string, l: (e: MouseEvent) => void) =>
+      (type === "click" ? clicks : listeners).add(l),
+    removeEventListener: (type: string, l: (e: MouseEvent) => void) =>
+      (type === "click" ? clicks : listeners).delete(l),
   };
-  return { win: win as unknown as Window, listeners, getHash: () => hash };
+  /** Dispatches a primary click on a link with this href (the shape the router reads). */
+  const clickLink = (href: string, init: Partial<MouseEvent> = {}) => {
+    const link = { getAttribute: () => href, hasAttribute: () => false };
+    const target = { closest: () => link };
+    const event = { defaultPrevented: false, button: 0, target, ...init } as unknown as MouseEvent;
+    for (const l of clicks) l(event);
+  };
+  return { win: win as unknown as Window, listeners, clicks, clickLink, getHash: () => hash };
 }
 
 describe("URL helpers", () => {
@@ -66,13 +76,14 @@ describe("URL helpers", () => {
 
 describe("router", () => {
   it("follows hashchange and stops when unsubscribed", () => {
-    const { win, listeners } = fakeWindow("#/l/abc");
+    const { win, listeners, clicks } = fakeWindow("#/l/abc");
     const stop = startRouter(win);
     expect(route.value).toEqual({ kind: "link", payload: "abc", password: false });
     win.location.hash = "#/zzz";
     expect(route.value).toEqual({ kind: "not-found" });
     stop();
     expect(listeners.size).toBe(0);
+    expect(clicks.size).toBe(0);
   });
 
   it("navigates by hash, or replaces the entry without a hashchange", () => {
@@ -84,6 +95,63 @@ describe("router", () => {
     navigate({ kind: "link", payload: "xyz", password: false }, { win, replace: true });
     expect(getHash()).toBe("#/l/xyz");
     expect(route.value).toEqual({ kind: "link", payload: "xyz", password: false });
+    stop();
+  });
+
+  it("bumps the visit when the same route opens again, not when only lines change", () => {
+    const { win } = fakeWindow("#/l/abc");
+    const stop = startRouter(win);
+    const before = visit.value;
+    // The same link reopened (e.g. after dropFragment removed it from the URL).
+    win.location.hash = "#/l/abc";
+    expect(visit.value).toBe(before + 1);
+    win.location.hash = serializeRoute({
+      kind: "link",
+      payload: "abc",
+      password: false,
+      lines: { start: 2, end: 4 },
+    });
+    expect(visit.value).toBe(before + 1);
+    stop();
+  });
+
+  it("bumps the visit when navigating home from home", () => {
+    const { win } = fakeWindow("#/");
+    const stop = startRouter(win);
+    const before = visit.value;
+    navigate({ kind: "home" }, { win });
+    expect(visit.value).toBe(before + 1);
+    expect(route.value).toEqual({ kind: "home" });
+    stop();
+  });
+
+  it("bumps the visit when a link to the hash already shown is clicked", () => {
+    const { win, clickLink } = fakeWindow("#/");
+    const stop = startRouter(win);
+    const before = visit.value;
+    clickLink("#/");
+    expect(visit.value).toBe(before + 1);
+    expect(route.value).toEqual({ kind: "home" });
+    // Modified clicks, links elsewhere and handled clicks are left alone.
+    clickLink("#/", { metaKey: true });
+    clickLink("#/l/other");
+    clickLink("#/", { defaultPrevented: true });
+    expect(visit.value).toBe(before + 1);
+    stop();
+  });
+
+  it("does not remount when a line number of the shown paste is clicked again", () => {
+    const lines = serializeRoute({
+      kind: "link",
+      payload: "abc",
+      password: false,
+      lines: { start: 5, end: 5 },
+    });
+    const { win, clickLink } = fakeWindow(lines);
+    const stop = startRouter(win);
+    const before = visit.value;
+    clickLink(lines);
+    expect(visit.value).toBe(before);
     stop();
   });
 });

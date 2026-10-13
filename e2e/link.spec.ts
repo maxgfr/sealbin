@@ -80,3 +80,16 @@ test("a visited link paste reloads offline from the service worker", async ({ pa
   expect((await codeLines(page)).join("\n")).toBe("works on a plane");
   await context.setOffline(false);
 });
+
+test("fast typing in the editor keeps the page responsive and the text intact", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.getByRole("textbox", { name: "Paste content" }).click();
+  // Back-to-back keys used to make the editor and Compose write stale text into each other forever.
+  const text = "const answer = 42; // typed quickly, one key after another";
+  await page.keyboard.type(text);
+  await expect(page.getByRole("textbox", { name: "Paste content" })).toHaveText(text);
+  await page.locator("#sb-title").fill("still responsive");
+  await expect(page.locator("#sb-title")).toHaveValue("still responsive");
+});

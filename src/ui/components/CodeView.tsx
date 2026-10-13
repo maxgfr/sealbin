@@ -54,21 +54,32 @@ export function CodeView({ content, lang, wrap, lines, lineHref, onSelectLines }
   const theme = codeTheme.value;
   const themed = themePref.value.code !== "auto";
   const limit = highlightLimit(content);
-  const [result, setResult] = useState<HighlightResult | null>(null);
+  // Tagged with what it highlights, so a theme change keeps it on screen until the new one is
+  // ready (no flash to plain text) while new content or a new language never shows a stale one.
+  const [highlighted, setHighlighted] = useState<{
+    content: string;
+    lang: string;
+    result: HighlightResult | null;
+  } | null>(null);
+  const result =
+    highlighted && highlighted.content === content && highlighted.lang === lang && !limit
+      ? highlighted.result
+      : null;
   const [failed, setFailed] = useState(false);
   const root = useRef<HTMLElement>(null);
   const scrolled = useRef(false);
 
   useEffect(() => {
-    setResult(null);
     setFailed(false);
     if (!lang || limit) return;
     let live = true;
     highlight(content, lang, theme).then(
-      (r) => live && setResult(r),
+      (r) => live && setHighlighted({ content, lang, result: r }),
       (err: unknown) => {
         console.warn("sealbin: highlighting failed, showing plain text", err);
-        if (live) setFailed(true);
+        if (!live) return;
+        setHighlighted(null);
+        setFailed(true);
       },
     );
     return () => {

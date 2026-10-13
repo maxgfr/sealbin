@@ -4,6 +4,9 @@
  * REQ/CLOSE with EOSE, NIP-09 deletions by `e` and `a` tags (author must match; `a` only removes
  * events up to the deletion's created_at). Addressable replacement keeps the newest event.
  *
+ * With `maxMessageLength`, EVENT messages longer than that many bytes get `OK false`, like
+ * public relays (NIP-11 `limitation.max_message_length`).
+ *
  *   const relay = await startTestRelay();      // ws://127.0.0.1:<random port>
  *   ...; await relay.close();
  */
@@ -28,7 +31,12 @@ function isExpired(e: Event, nowSec: number): boolean {
   return exp !== undefined && Number(exp) <= nowSec;
 }
 
-export async function startTestRelay(port = 0): Promise<TestRelay> {
+export interface TestRelayOptions {
+  /** Max bytes of one client message; larger EVENT messages are refused. */
+  maxMessageLength?: number;
+}
+
+export async function startTestRelay(port = 0, opts: TestRelayOptions = {}): Promise<TestRelay> {
   const wss = new WebSocketServer({ host: "127.0.0.1", port });
   await new Promise<void>((resolve, reject) => {
     wss.once("listening", resolve);
@@ -77,9 +85,10 @@ export async function startTestRelay(port = 0): Promise<TestRelay> {
     subs.set(ws, new Map());
     ws.on("close", () => subs.delete(ws));
     ws.on("message", (data) => {
+      const text = String(data);
       let msg: unknown;
       try {
-        msg = JSON.parse(String(data));
+        msg = JSON.parse(text);
       } catch (err) {
         send(ws, ["NOTICE", `invalid: ${String(err)}`]);
         return;
@@ -88,7 +97,11 @@ export async function startTestRelay(port = 0): Promise<TestRelay> {
       const [type, ...rest] = msg as [unknown, ...unknown[]];
       if (type === "EVENT") {
         const e = rest[0] as Event;
-        const [ok, reason] = accept(e);
+        const max = opts.maxMessageLength;
+        const [ok, reason] =
+          max !== undefined && Buffer.byteLength(text) > max
+            ? [false, `invalid: message too large (limit ${max} bytes)`]
+            : accept(e);
         send(ws, ["OK", e.id, ok, reason]);
         if (ok) {
           for (const [client, clientSubs] of subs) {
