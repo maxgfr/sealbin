@@ -1,8 +1,9 @@
 import type { Filter } from "nostr-tools/filter";
 import { matchFilters } from "nostr-tools/filter";
-import { SimplePool } from "nostr-tools/pool";
+import { SimplePool, useWebSocketImplementation } from "nostr-tools/pool";
 import { type Event, finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import WebSocket from "ws";
 import { type Paste, sealPaste, toBase64Url } from "./codec";
 import {
   deriveBurnSigner,
@@ -24,6 +25,10 @@ import {
   RelaysUnreachableError,
 } from "./nostr";
 import { startTestRelay, type TestRelay } from "./testing/relay";
+
+// Real-socket tests run under Node: use `ws`, since undici's WebSocket re-fires
+// "error" when nostr-tools closes a refused socket, recursing until stack overflow.
+useWebSocketImplementation(WebSocket);
 
 const FAST = { memoryKiB: 64, iterations: 1, parallelism: 1 };
 const RELAYS = ["wss://a.example", "wss://b.example"];
