@@ -1,6 +1,32 @@
 import { expect, type Page, test } from "@playwright/test";
 import { codeLines, createPaste } from "./helpers";
 
+test("switching the theme and reloading a link paste raises no page error", async ({
+  page: author,
+  browser,
+}) => {
+  const { shareUrl } = await createPaste(author, {
+    content: `# Notes\n\nSome *text* and a long line ${"word ".repeat(60)}`,
+    title: "Notes",
+    filename: "notes.md",
+  });
+  const reader = await browser.newContext();
+  const page = await reader.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(String(err)));
+  await page.goto(shareUrl);
+  await expect(page.locator("section.sb-code")).toBeVisible();
+  await page.locator("#sb-theme-scheme").selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.locator("#sb-theme-scheme").selectOption("light");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.locator("#sb-theme-code").selectOption("dracula");
+  await expect(page.locator("section.sb-code[data-state=highlighted]")).toBeVisible();
+  expect(errors).toEqual([]);
+  await reader.close();
+});
+
 /** Collects CSP violations (console reports and `securitypolicyviolation` events) for a page. */
 async function watchCsp(page: Page): Promise<string[]> {
   const violations: string[] = [];
