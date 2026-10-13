@@ -1,0 +1,144 @@
+/* sealbin design tokens. Naming: --sb-<category>-<role>. */
+@import "@fontsource-variable/jetbrains-mono/wght.css";
+
+:root {
+  color-scheme: light dark;
+
+  /* Typography */
+  --sb-font-mono:
+    "JetBrains Mono Variable", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sb-font-ui: var(--sb-font-mono);
+  --sb-text-xs: 0.75rem;
+  --sb-text-sm: 0.8125rem;
+  --sb-text-md: 0.875rem;
+  --sb-text-lg: 1.0625rem;
+  --sb-text-xl: 1.375rem;
+  --sb-leading-tight: 1.25;
+  --sb-leading-body: 1.55;
+  --sb-leading-code: 1.6;
+  --sb-weight-regular: 400;
+  --sb-weight-medium: 550;
+  --sb-weight-bold: 700;
+  --sb-tracking-caps: 0.06em;
+
+  /* Spacing (4px base) */
+  --sb-space-1: 0.25rem;
+  --sb-space-2: 0.5rem;
+  --sb-space-3: 0.75rem;
+  --sb-space-4: 1rem;
+  --sb-space-5: 1.5rem;
+  --sb-space-6: 2rem;
+  --sb-space-7: 3rem;
+
+  /* Radii */
+  --sb-radius-sm: 4px;
+  --sb-radius-md: 6px;
+  --sb-radius-lg: 8px;
+  --sb-radius-pill: 999px;
+
+  /* Layout */
+  --sb-width-content: 72rem;
+  --sb-header-height: 3rem;
+  --sb-gutter-width: 4ch;
+
+  /* Motion */
+  --sb-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --sb-duration-fast: 120ms;
+  --sb-duration-base: 200ms;
+
+  /* Layers */
+  --sb-z-header: 10;
+  --sb-z-dialog: 100;
+  --sb-z-toast: 200;
+
+  /* Light palette (default) */
+  --sb-color-bg: oklch(98.5% 0.004 80);
+  --sb-color-surface: oklch(96.5% 0.006 80);
+  --sb-color-surface-raised: oklch(100% 0 0);
+  --sb-color-border: oklch(88% 0.008 80);
+  --sb-color-border-strong: oklch(76% 0.01 80);
+  --sb-color-border-field: oklch(62% 0.01 80);
+  --sb-color-text: oklch(22% 0.01 80);
+  --sb-color-text-muted: oklch(46% 0.01 80);
+  --sb-color-text-faint: oklch(52% 0.01 80);
+  --sb-color-accent: oklch(55% 0.17 35);
+  --sb-color-accent-hover: oklch(49% 0.17 35);
+  --sb-color-accent-text: oklch(99% 0 0);
+  --sb-color-accent-soft: oklch(95.5% 0.025 35);
+  --sb-color-focus: oklch(55% 0.2 255);
+  --sb-color-error: oklch(52% 0.19 25);
+  --sb-color-error-soft: oklch(95% 0.03 25);
+  --sb-color-warning: oklch(52% 0.12 70);
+  --sb-color-warning-soft: oklch(95% 0.05 85);
+  --sb-color-success: oklch(50% 0.13 150);
+  --sb-color-success-soft: oklch(95% 0.04 150);
+  --sb-color-line-highlight: oklch(95% 0.05 85);
+  --sb-color-backdrop: oklch(20% 0.01 80 / 0.45);
+  --sb-shadow-dialog: 0 12px 40px oklch(20% 0.01 80 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sb-color-bg: oklch(17% 0.006 80);
+    --sb-color-surface: oklch(20.5% 0.007 80);
+    --sb-color-surface-raised: oklch(24% 0.008 80);
+    --sb-color-border: oklch(31% 0.008 80);
+    --sb-color-border-strong: oklch(42% 0.01 80);
+    --sb-color-border-field: oklch(54% 0.01 80);
+    --sb-color-text: oklch(92% 0.006 80);
+    --sb-color-text-muted: oklch(72% 0.008 80);
+    --sb-color-text-faint: oklch(62% 0.008 80);
+    --sb-color-accent: oklch(70% 0.15 40);
+    --sb-color-accent-hover: oklch(76% 0.14 40);
+    --sb-color-accent-text: oklch(17% 0.01 40);
+    --sb-color-accent-soft: oklch(28% 0.05 40);
+    --sb-color-focus: oklch(72% 0.15 255);
+    --sb-color-error: oklch(70% 0.16 25);
+    --sb-color-error-soft: oklch(27% 0.06 25);
+    --sb-color-warning: oklch(80% 0.13 80);
+    --sb-color-warning-soft: oklch(28% 0.05 80);
+    --sb-color-success: oklch(75% 0.14 150);
+    --sb-color-success-soft: oklch(27% 0.05 150);
+    --sb-color-line-highlight: oklch(28% 0.05 80);
+    --sb-color-backdrop: oklch(5% 0 0 / 0.6);
+    --sb-shadow-dialog: 0 12px 40px oklch(0% 0 0 / 0.5);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sb-color-bg: oklch(17% 0.006 80);
+  --sb-color-surface: oklch(20.5% 0.007 80);
+  --sb-color-surface-raised: oklch(24% 0.008 80);
+  --sb-color-border: oklch(31% 0.008 80);
+  --sb-color-border-strong: oklch(42% 0.01 80);
+  --sb-color-border-field: oklch(54% 0.01 80);
+  --sb-color-text: oklch(92% 0.006 80);
+  --sb-color-text-muted: oklch(72% 0.008 80);
+  --sb-color-text-faint: oklch(62% 0.008 80);
+  --sb-color-accent: oklch(70% 0.15 40);
+  --sb-color-accent-hover: oklch(76% 0.14 40);
+  --sb-color-accent-text: oklch(17% 0.01 40);
+  --sb-color-accent-soft: oklch(28% 0.05 40);
+  --sb-color-focus: oklch(72% 0.15 255);
+  --sb-color-error: oklch(70% 0.16 25);
+  --sb-color-error-soft: oklch(27% 0.06 25);
+  --sb-color-warning: oklch(80% 0.13 80);
+  --sb-color-warning-soft: oklch(28% 0.05 80);
+  --sb-color-success: oklch(75% 0.14 150);
+  --sb-color-success-soft: oklch(27% 0.05 150);
+  --sb-color-line-highlight: oklch(28% 0.05 80);
+  --sb-color-backdrop: oklch(5% 0 0 / 0.6);
+  --sb-shadow-dialog: 0 12px 40px oklch(0% 0 0 / 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sb-duration-fast: 0ms;
+    --sb-duration-base: 0ms;
+  }
+}

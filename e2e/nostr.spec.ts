@@ -1,0 +1,51 @@
+import { expect, test } from "@playwright/test";
+import { codeLines, createPaste } from "./helpers";
+
+test("short link: create, open, delete with the delete link, then gone", async ({
+  page,
+  browser,
+}) => {
+  const { shareUrl, deleteUrl } = await createPaste(page, {
+    content: "stored on the relay",
+    title: "Relay note",
+    nostr: true,
+  });
+  expect(deleteUrl).not.toBeNull();
+
+  const reader = await browser.newContext();
+  const view = await reader.newPage();
+  await view.goto(shareUrl);
+  await expect(view.locator("#sb-view-title")).toHaveText("Relay note");
+  expect((await codeLines(view)).join("\n")).toBe("stored on the relay");
+
+  await page.goto(deleteUrl ?? "");
+  await page.getByRole("button", { name: "Delete paste" }).click();
+  await expect(page.getByRole("heading", { name: "Paste deleted" })).toBeVisible();
+
+  const later = await reader.newPage();
+  await later.goto(shareUrl);
+  await expect(later.locator("#sb-error-title")).toHaveText("This paste is gone");
+  await reader.close();
+});
+
+test("burn after reading: the first reader sees it once, the second finds it gone", async ({
+  page,
+  browser,
+}) => {
+  const { shareUrl } = await createPaste(page, { content: "read me once", burn: true });
+
+  const first = await browser.newContext();
+  const view = await first.newPage();
+  await view.goto(shareUrl);
+  await expect(view.locator("#sb-burn-title")).toBeVisible();
+  await view.getByRole("button", { name: "Reveal and destroy" }).click();
+  expect((await codeLines(view)).join("\n")).toBe("read me once");
+  await expect.poll(() => new URL(view.url()).hash).toBe("");
+  await first.close();
+
+  const second = await browser.newContext();
+  const again = await second.newPage();
+  await again.goto(shareUrl);
+  await expect(again.locator("#sb-error-title")).toHaveText("This paste is gone");
+  await second.close();
+});
