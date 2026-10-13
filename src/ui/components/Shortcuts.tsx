@@ -6,7 +6,7 @@
  * On Apple platforms Control+S creates too, so the shortcut works whichever modifier is used.
  */
 import { signal } from "@preact/signals";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { defaultKeybindingsHandlerIgnore, tinykeys } from "tinykeys";
 import { navigate } from "../routes";
 
@@ -64,12 +64,14 @@ const helpOpen = signal(false);
 
 /**
  * Bind actions for as long as the calling component is mounted. The set of keys is fixed at
- * mount; the handlers are read on each press, so they always see the latest state.
+ * mount; the handlers are read on each press, so they always see the latest state. A layout
+ * effect binds them in the same commit as the screen, so a key pressed as soon as it shows works
+ * (a plain effect waits for the next frame).
  */
 export function useShortcutActions(map: ActionMap): void {
   const latest = useRef(map);
   latest.current = map;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const ids = Object.keys(latest.current) as ActionId[];
     const bound: ActionMap = {};
     for (const id of ids) bound[id] = () => latest.current[id]?.();

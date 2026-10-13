@@ -40,3 +40,29 @@ test("single-key shortcuts are inert while typing; Ctrl/Meta+S creates", async (
   const { shareUrl } = await readResult(page);
   expect(new URL(shareUrl).hash).not.toBe("");
 });
+
+test("f forks right after the code view appears", async ({ page }) => {
+  const { shareUrl } = await createPaste(page, { title: "Forked", content: "fork me" });
+  await page.goto(shareUrl);
+  await expect(page.locator("section.sb-code")).toBeVisible();
+  await page.keyboard.press("f");
+  await expect(page.locator("#sb-title")).toHaveValue("Forked");
+  await expect(page.getByRole("textbox", { name: "Paste content" })).toHaveText("fork me");
+});
+
+test("y, c and w act right after the code view appears", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const { shareUrl } = await createPaste(page, { content: "copy me" });
+  await page.goto(shareUrl);
+  await expect(page.locator("section.sb-code")).toBeVisible();
+  await page.keyboard.press("y");
+  await expect(page.getByText("Link copied")).toBeVisible();
+  await page.keyboard.press("c");
+  await expect(page.getByText("Content copied")).toBeVisible();
+  const wrap = page.getByRole("toolbar", { name: "Paste actions" }).getByRole("button", {
+    name: "Wrap",
+  });
+  const before = await wrap.getAttribute("aria-pressed");
+  await page.keyboard.press("w");
+  await expect(wrap).not.toHaveAttribute("aria-pressed", before ?? "");
+});
