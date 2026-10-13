@@ -2,7 +2,7 @@
 import { startTestRelay } from "../src/core/testing/relay";
 
 const port = Number(process.env.PORT ?? 4174);
-const relay = await startTestRelay(port);
+const relay = await startTestRelay(port, { maxMessageLength: 131_072 });
 console.log(`test relay listening on ${relay.url}`);
 
 const stop = () => {

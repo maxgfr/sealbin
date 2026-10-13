@@ -2,7 +2,8 @@
  * Keyboard shortcuts and the `?` help dialog. The table below is the single source for both.
  * Screens register what a key does with `useShortcutActions`; a key with no action does nothing.
  * Single keys are ignored while typing (inputs, selects, contenteditable, the CodeMirror editor)
- * and while a dialog is open; `$mod+S` (Create) works everywhere.
+ * and while a dialog is open; `$mod+S` (Create) works everywhere except behind an open dialog.
+ * On Apple platforms Control+S creates too, so the shortcut works whichever modifier is used.
  */
 import { signal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
@@ -20,6 +21,17 @@ export type ActionId =
   | "wrap"
   | "create";
 
+/**
+ * macOS, iOS and iPadOS, where `$mod` is Command. Same test as tinykeys (`navigator.platform`),
+ * so the key shown always matches what `$mod` binds, even when the user agent string disagrees.
+ */
+export const IS_APPLE =
+  typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+
+/** The Create shortcut as shown on a key cap, and as `aria-keyshortcuts` lists it. */
+export const CREATE_KEY = IS_APPLE ? "⌘ S" : "Ctrl S";
+export const CREATE_ARIA_KEYS = IS_APPLE ? "Meta+S Control+S" : "Control+S";
+
 export const SHORTCUTS: readonly { keys: string; label: string; display: string }[] = [
   { keys: "n", display: "n", label: "New paste" },
   { keys: "r", display: "r", label: "Raw text" },
@@ -31,7 +43,7 @@ export const SHORTCUTS: readonly { keys: string; label: string; display: string 
   { keys: "m", display: "m", label: "Rendered Markdown" },
   { keys: "w", display: "w", label: "Wrap lines" },
   { keys: "?", display: "?", label: "Keyboard shortcuts" },
-  { keys: "$mod+s", display: "Ctrl S / ⌘ S", label: "Create paste" },
+  { keys: "$mod+s", display: CREATE_KEY, label: "Create paste" },
 ];
 
 const KEY_ACTIONS: Record<string, ActionId> = {
@@ -100,7 +112,14 @@ export function Shortcuts() {
     };
     for (const [key, id] of Object.entries(KEY_ACTIONS)) single[key] = (e) => run(id, e);
     const offSingle = tinykeys(window, single, { ignore: ignoreWhileTyping });
-    const offMod = tinykeys(window, { "$mod+s": (e) => run("create", e) }, { ignore: () => false });
+    const create = (e: KeyboardEvent) => {
+      // Never act behind a modal dialog (shortcuts help, QR code): the user cannot see the form.
+      if (document.querySelector("dialog[open]") !== null) return;
+      run("create", e);
+    };
+    const mod: Record<string, (e: KeyboardEvent) => void> = { "$mod+s": create };
+    if (IS_APPLE) mod["Control+s"] = create;
+    const offMod = tinykeys(window, mod, { ignore: () => false });
     return () => {
       offSingle();
       offMod();

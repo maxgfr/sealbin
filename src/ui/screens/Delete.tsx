@@ -41,8 +41,8 @@ export function Delete({ route }: { route: DeleteRoute }) {
           Paste deleted
         </h1>
         <p class="sb-interstitial__body">
-          {state.relays === 1 ? "1 relay" : `${state.relays} relays`} accepted the deletion. Relays
-          that missed it drop the paste when it expires.
+          {state.relays === 1 ? "1 relay" : `${state.relays} relays`} accepted the deletion. A relay
+          that missed it can keep serving the paste until it expires, or for good if it never does.
         </p>
         <div class="sb-interstitial__actions">
           <button

@@ -17,14 +17,41 @@ export interface LocationLike {
 
 export const route = signal<Route>(parseRoute(globalThis.location?.hash ?? ""));
 
+/**
+ * Bumped when the reader navigates again to the route already shown (the same link reopened
+ * after `dropFragment`, Home while on Home). Part of the screen key, so the screen remounts.
+ * A change of `&L` lines alone does not bump it.
+ */
+export const visit = signal(0);
+
 /** Subscribe `route` to the window's hash; returns the unsubscribe function. */
 export function startRouter(win: Window = window): () => void {
   const sync = () => {
-    route.value = parseRoute(win.location.hash);
+    const next = parseRoute(win.location.hash);
+    if (serializeRoute(next) === serializeRoute(route.value)) visit.value++;
+    route.value = next;
+  };
+  // A link to the hash already shown (the brand link while home) fires no hashchange: count the
+  // click as a new visit, unless the link only selects lines or something else handled it.
+  const click = (e: MouseEvent) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    const link = (e.target as Element | null)?.closest?.("a[href^='#']");
+    const href = link?.getAttribute("href");
+    if (!link || link.hasAttribute("target") || href !== win.location.hash) return;
+    const next = parseRoute(href);
+    if ("lines" in next && next.lines) return;
+    visit.value++;
+    route.value = next;
   };
   sync();
   win.addEventListener("hashchange", sync);
-  return () => win.removeEventListener("hashchange", sync);
+  win.addEventListener("click", click);
+  return () => {
+    win.removeEventListener("hashchange", sync);
+    win.removeEventListener("click", click);
+  };
 }
 
 /** Go to a route. `replace` rewrites the history entry (used to drop secrets from the URL). */
@@ -35,6 +62,8 @@ export function navigate(to: Route, opts: { replace?: boolean; win?: Window } = 
     win.history.replaceState(win.history.state, "", hash);
     route.value = parseRoute(hash);
   } else if (win.location.hash === hash) {
+    // Same hash: no hashchange fires. Remount, unless this only re-selects the same lines.
+    if (!("lines" in to && to.lines)) visit.value++;
     route.value = parseRoute(hash);
   } else {
     win.location.hash = hash;

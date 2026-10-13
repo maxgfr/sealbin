@@ -13,6 +13,7 @@ An end-to-end encrypted pastebin that runs entirely in your browser. There is no
 - **Two storage modes.**
   - *Link*: the encrypted paste is the link. Nothing is stored anywhere and no network request is made.
   - *Short link*: the encrypted paste is published to public Nostr relays and the link carries only a 32-byte secret.
+- Pastes up to 2 MiB in both modes. A long short-link paste is split into several relay events of at most 100,000 characters each, so it fits the strictest public relays (128 KiB per message). A long link works too, but some chat apps cut links over about 2,000 characters, so the composer suggests a short link past that.
 - AES-256-GCM encryption with keys derived by HKDF-SHA-256; content is compressed first.
 - Optional password, stretched with Argon2id and combined with the link secret.
 - Expiry (NIP-40 on relays, checked client side in link mode) and burn after reading.

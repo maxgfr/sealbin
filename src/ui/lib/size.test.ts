@@ -1,35 +1,74 @@
 import { describe, expect, it } from "vitest";
-import { encodeLinkPayload, PASTE_VERSION, type Paste } from "../../core/codec";
+import {
+  encodeLinkPayload,
+  MAX_PLAINTEXT_BYTES,
+  PASTE_VERSION,
+  type Paste,
+} from "../../core/codec";
+import { CHUNK_CHARS, MAX_CHUNKS, MAX_CONTENT_CHARS } from "../../core/nostr";
 import {
   base64UrlLength,
   deflatedSize,
   fitsQr,
+  formatSize,
   LINK_WARN_CHARS,
   linkLength,
   linkState,
+  MAX_PASTE_BYTES,
+  NOSTR_CHUNK_CHARS,
   NOSTR_MAX_CHARS,
+  NOSTR_MAX_CHUNKS,
+  nostrChunks,
   nostrState,
+  pasteBytes,
   QR_MAX_BYTES,
   sealedBytes,
+  tooLargeText,
 } from "./size";
 
 describe("thresholds", () => {
   it("match the documented limits", () => {
     expect(LINK_WARN_CHARS).toBe(2_000);
     expect(QR_MAX_BYTES).toBe(2_953);
-    expect(NOSTR_MAX_CHARS).toBe(60_000);
+    expect(MAX_PASTE_BYTES).toBe(2 * 1024 * 1024);
+    expect(NOSTR_CHUNK_CHARS).toBe(100_000);
+    expect(NOSTR_MAX_CHUNKS).toBe(28);
+    expect(NOSTR_MAX_CHARS).toBe(2_800_000);
   });
 
-  it("warns on links over 2,000 characters", () => {
-    expect(linkState(2_000)).toBe("ok");
-    expect(linkState(2_001)).toBe("warning");
+  it("mirror the core limits without importing them", () => {
+    expect(MAX_PASTE_BYTES).toBe(MAX_PLAINTEXT_BYTES);
+    expect(NOSTR_CHUNK_CHARS).toBe(CHUNK_CHARS);
+    expect(NOSTR_MAX_CHUNKS).toBe(MAX_CHUNKS);
+    expect(NOSTR_MAX_CHARS).toBe(MAX_CONTENT_CHARS);
   });
 
-  it("warns near and refuses over the Nostr cap", () => {
-    expect(nostrState(53_999)).toBe("ok");
-    expect(nostrState(54_001)).toBe("warning");
-    expect(nostrState(60_000)).toBe("warning");
-    expect(nostrState(60_001)).toBe("error");
+  it("only hints on long links, and refuses only over the paste limit", () => {
+    expect(linkState(2_000, 1_000)).toBe("ok");
+    expect(linkState(2_001, 1_000)).toBe("warning");
+    expect(linkState(2_500_000, MAX_PASTE_BYTES)).toBe("warning");
+    expect(linkState(2_500_000, MAX_PASTE_BYTES + 1)).toBe("error");
+  });
+
+  it("warns near and refuses over the short-link limit", () => {
+    const near = Math.floor(MAX_PASTE_BYTES * 0.9);
+    expect(nostrState(60_001, 100_000)).toBe("ok");
+    expect(nostrState(500_000, near)).toBe("ok");
+    expect(nostrState(500_000, near + 1)).toBe("warning");
+    expect(nostrState(2_800_000, MAX_PASTE_BYTES)).toBe("warning");
+    expect(nostrState(2_800_000, MAX_PASTE_BYTES + 1)).toBe("error");
+    expect(nostrState(2_800_001, 1_000)).toBe("error");
+  });
+
+  it("counts relay events and formats sizes", () => {
+    expect(nostrChunks(0)).toBe(1);
+    expect(nostrChunks(100_000)).toBe(1);
+    expect(nostrChunks(100_001)).toBe(2);
+    expect(nostrChunks(2_800_000)).toBe(28);
+    expect(pasteBytes("é")).toBe(2);
+    expect(formatSize(900)).toBe("900 bytes");
+    expect(formatSize(340_000)).toBe("340 KB");
+    expect(formatSize(MAX_PASTE_BYTES)).toBe("2.1 MB");
   });
 
   it("offers a QR code up to 2,953 bytes", () => {
@@ -62,6 +101,15 @@ describe("estimates", () => {
     const base = "https://maxgfr.github.io/sealbin/";
     expect(linkLength(base.length, sealedBytes(compressed, false))).toBe(
       `${base}#/l/${payload}`.length,
+    );
+  });
+});
+
+describe("tooLargeText", () => {
+  it("is null up to the limit and explains past it", () => {
+    expect(tooLargeText(MAX_PASTE_BYTES)).toBeNull();
+    expect(tooLargeText(MAX_PASTE_BYTES + 1)).toBe(
+      "Too large to share: 2.1 MB, the limit is 2.1 MB. Shorten it.",
     );
   });
 });

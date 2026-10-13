@@ -32,8 +32,7 @@ test("the help button opens the same dialog", async ({ page }) => {
 test("single-key shortcuts are inert while typing; Ctrl/Meta+S creates", async ({ page }) => {
   await page.goto("./");
   await page.getByRole("textbox", { name: "Paste content" }).click();
-  // Human-paced keys: back-to-back synthetic input into CodeMirror can stall Playwright's input ack.
-  await page.keyboard.type("?wq", { delay: 80 });
+  await page.keyboard.type("?wq");
   await expect(page.locator("dialog.sb-dialog", { hasText: "Keyboard shortcuts" })).toBeHidden();
   await expect(page.getByRole("textbox", { name: "Paste content" })).toHaveText("?wq");
 
