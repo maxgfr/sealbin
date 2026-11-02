@@ -15,6 +15,7 @@ import type { Route } from "../core/link";
 import { Shortcuts } from "./components/Shortcuts";
 import { ThemePicker } from "./components/ThemePicker";
 import { ToastRegion } from "./components/Toast";
+import { reloadedOnce, setReloaded } from "./lib/reloadGuard";
 import { route, routeKey, visit } from "./routes";
 import { Compose } from "./screens/Compose";
 import { NotFound } from "./screens/NotFound";
@@ -24,27 +25,6 @@ type DeleteRoute = Extract<Route, { kind: "delete" }>;
 
 const loadView = () => import("./screens/View").then((m) => m.View);
 const loadDelete = () => import("./screens/Delete").then((m) => m.Delete);
-
-/** sessionStorage flag: set before the one automatic reload, cleared when a screen loads. */
-const RELOADED = "sb-reloaded-for-update";
-
-function reloadedOnce(): boolean {
-  try {
-    return sessionStorage.getItem(RELOADED) !== null;
-  } catch {
-    // Storage blocked: never auto-reload, since the loop guard could not hold.
-    return true;
-  }
-}
-
-function setReloaded(on: boolean): void {
-  try {
-    if (on) sessionStorage.setItem(RELOADED, "1");
-    else sessionStorage.removeItem(RELOADED);
-  } catch {
-    // Storage blocked: reloadedOnce() already reports true, so nothing to record.
-  }
-}
 
 /**
  * A chunk failed to load, most likely because a new deploy removed it. Fetch the new service
@@ -64,7 +44,8 @@ async function reloadForUpdate(): Promise<boolean> {
       });
     }
   }
-  setReloaded(true);
+  // Without the flag stored, the next load could not tell it already reloaded: no loop.
+  if (!setReloaded(true)) return false;
   location.reload();
   return true;
 }
