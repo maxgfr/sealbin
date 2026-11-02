@@ -1,0 +1,11 @@
+# The project is managed by Bun (bun.lock). Without this entry Dependabot's
+# security updates run the npm ecosystem, which cannot read bun.lock, and every
+# "Dependabot Updates" run fails. Only security updates are wanted: the limit of
+# 0 turns off version-update pull requests.
+version: 2
+updates:
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
